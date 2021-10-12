@@ -1,0 +1,1742 @@
+Info to Ci4 Developer
+
+instruction for migrate to  new  version codeigniter 4
+its need add this change  update newer version (currently 4.1.4)
+
+this notes is all about "myth/auth": "^1.0"
+link to library https://github.com/lonnieezell/myth-auth
+i change some part of "math/auth" to work better
+ follow my changes (it has -1 to 9 step)
+//--------------------------------------------------------------------
+-1) go to system/Entity.php
+add function
+<?php
+
+/**
+ * This file is part of the CodeIgniter 4 framework.
+ *
+ * (c) CodeIgniter Foundation <admin@codeigniter.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace CodeIgniter;
+
+use CodeIgniter\Entity\Entity as CoreEntity;
+
+/**
+ * Entity encapsulation, for use with CodeIgniter\Model
+ *
+ * @deprecated use CodeIgniter\Entity\Entity class instead
+ */
+
+
+class Entity extends CoreEntity
+{
+ //look here
+   // look here
+     // look here
+       // look here
+
+    public function getDataMap()
+    {
+        return $this->datamap;
+    }
+}
+
+
+//--------------------------------------------------------------------
+
+ 0) after migration math/auth tables to database
+go this path  modules/auth/database/migration/2022-1-1-223112_auth_tables.php
+open file see which field is no in default math auth tables
+add them one by one     this step is necessary )
+
+//--------------------------------------------------------------------
+
+
+
+1) path math/auth/src/Config/route.php
+change file to
+<?php
+
+/*
+ * Myth:Auth routes file.
+ */
+//$routes->group('', ['namespace' => 'Myth\Auth\Controllers'], function ($routes) {
+//    // Login/out
+//    $routes->get('login', 'AuthController::login', ['as' => 'login']);
+//    $routes->post('login', 'AuthController::attemptLogin');
+//    $routes->get('logout', 'AuthController::logout');
+//
+//    // Registration
+//    $routes->get('register', 'AuthController::register', ['as' => 'register']);
+//    $routes->post('register', 'AuthController::attemptRegister');
+//
+//    // Activation
+//    $routes->get('activate-account', 'AuthController::activateAccount', ['as' => 'activate-account']);
+//    $routes->get('resend-activate-account', 'AuthController::resendActivateAccount', ['as' => 'resend-activate-account']);
+//
+//    // Forgot/Resets
+//    $routes->get('forgot', 'AuthController::forgotPassword', ['as' => 'forgot']);
+//    $routes->post('forgot', 'AuthController::attemptForgot');
+//    $routes->get('reset-password', 'AuthController::resetPassword', ['as' => 'reset-password']);
+//    $routes->post('reset-password', 'AuthController::attemptReset');
+//});
+
+//--------------------------------------------------------------------
+
+2) path math/auth/src/Config/Auth.php
+
+public $validFields = [
+		'email',
+		'username',
+        'phone' //add this phone for using login via phone
+	];
+
+//default user role is 'member'
+public $defaultUserGroup= 'member';
+
+//--------------------------------------------------------------------
+
+5) path math/auth/src/Models/LoginModel.php
+
+change file like mine
+
+
+<?php namespace Myth\Auth\Models;
+
+use CodeIgniter\Model;
+
+class LoginModel extends Model
+{
+    protected $table = 'auth_logins';
+    protected $primaryKey = 'id';
+
+    protected $returnType = 'object';
+    protected $useSoftDeletes = false;
+
+//look here
+  // look here
+    // look here
+      // look here
+    protected $allowedFields = [
+        'ip_address',
+         'email',
+          'user_id',
+          'username',
+          'date',
+          'success',
+           'phone'
+    ];
+
+    protected $useTimestamps = false;
+//look here
+  // look here
+    // look here
+      // look here
+    protected $validationRules = [
+        'ip_address' => 'required',
+        'email' => 'if_exist|required',
+        'phone' => 'if_exist|required',
+        'user_id' => 'permit_empty|integer',
+        'date' => 'required|valid_date',
+    ];
+    protected $validationMessages = [];
+    protected $skipValidation = false;
+
+    /**
+     * Stores a remember-me token for the user.
+     *
+     * @param int $userID
+     * @param string $selector
+     * @param string $validator
+     * @param string $expires
+     *
+     * @return mixed
+     */
+    public function rememberUser(int $userID, string $selector, string $validator, string $expires)
+    {
+        $expires = new \DateTime($expires);
+
+        return $this->db->table('auth_tokens')->insert([
+            'user_id' => $userID,
+            'selector' => $selector,
+            'hashedValidator' => $validator,
+            'expires' => $expires->format('Y-m-d H:i:s'),
+        ]);
+    }
+
+    /**
+     * Returns the remember-me token info for a given selector.
+     *
+     * @param string $selector
+     *
+     * @return mixed
+     */
+    public function getRememberToken(string $selector)
+    {
+        return $this->db->table('auth_tokens')
+            ->where('selector', $selector)
+            ->get()
+            ->getRow();
+    }
+
+    /**
+     * Updates the validator for a given selector.
+     *
+     * @param string $selector
+     * @param string $validator
+     *
+     * @return mixed
+     */
+    public function updateRememberValidator(string $selector, string $validator)
+    {
+        return $this->db->table('auth_tokens')
+            ->where('selector', $selector)
+            ->update([
+                'hashedValidator' => hash('sha256', $validator),
+                'expires' => (new \DateTime)->modify('+' . config('Auth')->rememberLength . ' seconds')->format('Y-m-d H:i:s'),
+            ]);
+    }
+
+
+    /**
+     * Removes all persistent login tokens (RememberMe) for a single user
+     * across all devices they may have logged in with.
+     *
+     * @param int $id
+     *
+     * @return mixed
+     */
+    public function purgeRememberTokens(int $id)
+    {
+        return $this->builder('auth_tokens')->where(['user_id' => $id])->delete();
+    }
+
+    /**
+     * Purges the 'auth_tokens' table of any records that are past
+     * their expiration date already.
+     */
+    public function purgeOldRememberTokens()
+    {
+        $config = config('Auth');
+
+        if (!$config->allowRemembering) {
+            return;
+        }
+
+        $this->db->table('auth_tokens')
+            ->where('expires <=', date('Y-m-d H:i:s'))
+            ->delete();
+    }
+}
+//--------------------------------------------------------------------
+
+5) path math/auth/src/Models/UserModel.php
+
+change file like mine
+
+
+<?php namespace Myth\Auth\Models;
+
+use CodeIgniter\Model;
+use Myth\Auth\Authorization\GroupModel;
+use Myth\Auth\Entities\User;
+
+class UserModel extends Model
+{
+    protected $table = 'users';
+    protected $primaryKey = 'id';
+
+    protected $returnType = User::class;
+    protected $useSoftDeletes = false;
+  // look here
+    // look here
+// look here
+    protected $allowedFields = [
+        'email', 'username', 'password_hash', 'reset_hash', 'reset_at', 'reset_expires', 'activate_hash',
+        'status', 'status_message', 'active', 'force_pass_reset', 'permissions',
+        'first_name',
+        'last_name',
+        'image',
+        'address',
+        'phone',
+        'email',
+        'gender',
+        'country',
+        'city',
+        'created_at',
+        'updated_at',
+        'deleted_at',
+    ];
+
+    protected $useTimestamps = false;
+// look here
+  // look here
+  // look here
+   // look here
+    protected $validationRules = [
+        'email' => 'if_exist|required|valid_email|is_unique[users.email,id,{id}]',
+        'phone' => 'if_exist|required|is_unique[users.phone,id,{id}]',
+        'username' => 'if_exist|required|alpha_numeric_punct|min_length[3]|max_length[30]|is_unique[users.username,id,{id}]',
+        'password_hash' => 'if_exist|required',
+    ];
+    protected $validationMessages = [];
+    protected $skipValidation = false;
+
+    protected $afterInsert = ['addToGroup'];
+
+    /**
+     * The id of a group to assign.
+     * Set internally by withGroup.
+     *
+     * @var int|null
+     */
+    protected $assignGroup;
+
+    /**
+     * Logs a password reset attempt for posterity sake.
+     *
+     * @param string $email
+     * @param string|null $token
+     * @param string|null $ipAddress
+     * @param string|null $userAgent
+     */
+    public function logResetAttempt(string $email, string $token = null, string $ipAddress = null, string $userAgent = null)
+    {
+        $this->db->table('auth_reset_attempts')->insert([
+            'email' => $email,
+            'ip_address' => $ipAddress,
+            'user_agent' => $userAgent,
+            'token' => $token,
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+    }
+
+    /**
+     * Logs an activation attempt for posterity sake.
+     *
+     * @param string|null $token
+     * @param string|null $ipAddress
+     * @param string|null $userAgent
+     */
+    public function logActivationAttempt(string $token = null, string $ipAddress = null, string $userAgent = null)
+    {
+        $this->db->table('auth_activation_attempts')->insert([
+            'ip_address' => $ipAddress,
+            'user_agent' => $userAgent,
+            'token' => $token,
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+    }
+
+    /**
+     * Sets the group to assign any users created.
+     *
+     * @param string $groupName
+     *
+     * @return $this
+     */
+    public function withGroup(string $groupName)
+    {
+        $group = $this->db->table('auth_groups')->where('name', $groupName)->get()->getFirstRow();
+
+        $this->assignGroup = $group->id;
+
+        return $this;
+    }
+
+    /**
+     * Clears the group to assign to newly created users.
+     *
+     * @return $this
+     */
+    public function clearGroup()
+    {
+        $this->assignGroup = null;
+
+        return $this;
+    }
+
+    /**
+     * If a default role is assigned in Config\Auth, will
+     * add this user to that group. Will do nothing
+     * if the group cannot be found.
+     *
+     * @param mixed $data
+     *
+     * @return mixed
+     */
+    protected function addToGroup($data)
+    {
+        if (is_numeric($this->assignGroup)) {
+            $groupModel = model(GroupModel::class);
+            $groupModel->addUserToGroup($data['id'], $this->assignGroup);
+        }
+
+        return $data;
+    }
+
+
+}
+
+//------------------------------------------------------------------------------
+5) path math/auth/src/Entities/User.php
+
+change file like mine
+
+<?php namespace Myth\Auth\Entities;
+
+use CodeIgniter\Entity;
+use Myth\Auth\Authorization\GroupModel;
+use Myth\Auth\Authorization\PermissionModel;
+use Myth\Auth\Password;
+
+class User extends Entity
+{
+ // look here
+   // look here
+     // look here
+   protected $id;
+   protected $firstName;
+   protected $lastName;
+   protected $phone;
+   protected $image;
+   protected $address;
+   protected $gender;
+   protected $country;
+   protected $city;
+   protected $email;
+   protected $createdAt;
+   protected $updatedAt;
+   protected $deletedAt;
+   protected $group;
+ // look here
+  // look here
+    // look here
+    protected $attributes = [
+        'id' => null,
+        'first_name' => null,
+        'last_name' => null,
+        'phone' => null,
+        'email' => null,
+        'address' => null,
+        'image' => null,
+        'gender' => null,
+        'country' => null,
+        'city' => null,
+        'status_message' => null,
+        'status' => null,
+        'active' => null,
+        'created_at' => null,
+        'updated_at' => null,
+        'deleted_at' => null,
+
+    ];
+
+
+    /**
+     * Maps names used in sets and gets against unique
+     * names within the class, allowing independence from
+     * database column names.
+     *
+     * Example:
+     *  $datamap = [
+     *      'db_name' => 'class_name'
+     *  ];
+     */
+  // look here
+    // look here
+ // look here
+    protected $datamap = [
+
+        'firstName' => 'first_name',
+        'lastName' => 'last_name',
+        'createdAt' => 'created_at',
+        'updatedAt' => 'updated_at',
+        'deletedAt' => 'deleted_at',
+        'statusMessage' => 'status_message'
+    ];
+
+
+
+    /**
+     * Define properties that are automatically converted to Time instances.
+     */
+    protected $dates = ['reset_at', 'reset_expires', 'created_at', 'updated_at', 'deleted_at'];
+
+    /**
+     * Array of field names and the type of value to cast them as
+     * when they are accessed.
+     */
+    protected $casts = [
+        'active' => 'boolean',
+        'force_pass_reset' => 'boolean',
+    ];
+
+    /**
+     * Per-user permissions cache
+     * @var array
+     */
+    protected $permissions = [];
+
+    /**
+     * Per-user roles cache
+     * @var array
+     */
+    protected $roles = [];
+
+// look here
+  // look here
+    // look here
+      // look here
+
+    public function editImage()
+    {
+        $this->attributes['image'] = 'public/upload/profile/' . $this->attributes['image'];
+        return $this;
+    }
+    // look here
+      // look here
+        // look here
+          // look here
+public function disableStatus()
+    {
+        $this->attributes['status'] = 0;
+
+        return $this;
+    }
+
+    /**
+     * Automatically hashes the password when set.
+     *
+     * @see https://paragonie.com/blog/2015/04/secure-authentication-php-with-long-term-persistence
+     *
+     * @param string $password
+     */
+    public function setPassword(string $password)
+    {
+        $this->attributes['password_hash'] = Password::hash($password);
+
+        /*
+            Set these vars to null in case a reset password was asked.
+            Scenario:
+                user (a *dumb* one with short memory) requests a
+                reset-token and then does nothing => asks the
+                administrator to reset his password.
+            User would have a new password but still anyone with the
+            reset-token would be able to change the password.
+        */
+        $this->attributes['reset_hash'] = null;
+        $this->attributes['reset_at'] = null;
+        $this->attributes['reset_expires'] = null;
+    }
+
+    /**
+     * Force a user to reset their password on next page refresh
+     * or login. Checked in the LocalAuthenticator's check() method.
+     *
+     * @return $this
+     * @throws \Exception
+     *
+     */
+    public function forcePasswordReset()
+    {
+        $this->generateResetHash();
+        $this->attributes['force_pass_reset'] = 1;
+
+        return $this;
+    }
+
+    /**
+     * Generates a secure hash to use for password reset purposes,
+     * saves it to the instance.
+     *
+     * @return $this
+     * @throws \Exception
+     */
+    public function generateResetHash()
+    {
+        $this->attributes['reset_hash'] = bin2hex(random_bytes(16));
+        $this->attributes['reset_expires'] = date('Y-m-d H:i:s', time() + config('Auth')->resetTime);
+
+        return $this;
+    }
+
+    /**
+     * Generates a secure random hash to use for account activation.
+     *
+     * @return $this
+     * @throws \Exception
+     */
+    public function generateActivateHash()
+    {
+        $this->attributes['activate_hash'] = bin2hex(random_bytes(16));
+
+        return $this;
+    }
+
+    /**
+     * Activate user.
+     *
+     * @return $this
+     */
+    public function activate()
+    {
+        $this->attributes['active'] = 1;
+        $this->attributes['activate_hash'] = null;
+
+        return $this;
+    }
+
+    /**
+     * Unactivate user.
+     *
+     * @return $this
+     */
+    public function deactivate()
+    {
+        $this->attributes['active'] = 0;
+
+        return $this;
+    }
+
+    /**
+     * Checks to see if a user is active.
+     *
+     * @return bool
+     */
+    public function isActivated(): bool
+    {
+        return isset($this->attributes['active']) && $this->attributes['active'] == true;
+    }
+
+    /**
+     * Bans a user.
+     *
+     * @param string $reason
+     *
+     * @return $this
+     */
+    public function ban(string $reason)
+    {
+        $this->attributes['status'] = 'banned';
+        $this->attributes['status_message'] = $reason;
+
+        return $this;
+    }
+
+    /**
+     * Removes a ban from a user.
+     *
+     * @return $this
+     */
+    public function unBan()
+    {
+        $this->attributes['status'] = $this->status_message = '';
+
+        return $this;
+    }
+
+    /**
+     * Checks to see if a user has been banned.
+     *
+     * @return bool
+     */
+    public function isBanned(): bool
+    {
+        return isset($this->attributes['status']) && $this->attributes['status'] === 'banned';
+    }
+
+    /**
+     * Determines whether the user has the appropriate permission,
+     * either directly, or through one of it's groups.
+     *
+     * @param string $permission
+     *
+     * @return bool
+     */
+    public function can(string $permission)
+    {
+        return in_array(strtolower($permission), $this->getPermissions());
+    }
+
+    /**
+     * Returns the user's permissions, formatted for simple checking:
+     *
+     * [
+     *    id => name,
+     *    id=> name,
+     * ]
+     *
+     * @return array|mixed
+     */
+    public function getPermissions()
+    {
+        if (empty($this->id)) {
+            throw new \RuntimeException('Users must be created before getting permissions.');
+        }
+
+        if (empty($this->permissions)) {
+            $this->permissions = model(PermissionModel::class)->getPermissionsForUser($this->id);
+        }
+
+        return $this->permissions;
+    }
+
+    /**
+     * Returns the user's roles, formatted for simple checking:
+     *
+     * [
+     *    id => name,
+     *    id => name,
+     * ]
+     *
+     * @return array|mixed
+     */
+    public function getRoles()
+    {
+        if (empty($this->id)) {
+            throw new \RuntimeException('Users must be created before getting roles.');
+        }
+
+        if (empty($this->roles)) {
+            $groups = model(GroupModel::class)->getGroupsForUser($this->id);
+
+            foreach ($groups as $group) {
+                $this->roles[$group['group_id']] = strtolower($group['name']);
+            }
+        }
+
+        return $this->roles;
+    }
+
+    /**
+     * Warns the developer it won't work, so they don't spend
+     * hours tracking stuff down.
+     *
+     * @param array $permissions
+     *
+     * @return $this
+     */
+    public function setPermissions(array $permissions = null)
+    {
+        throw new \RuntimeException('User entity does not support saving permissions directly.');
+    }
+
+
+}
+//------------------------------------------------------------------------------
+6) path math/auth/srcAuthentication/AuthenticationBase.php
+change file like mine
+
+
+
+<?php namespace Myth\Auth\Authentication;
+
+use CodeIgniter\Events\Events;
+use CodeIgniter\Model;
+use Myth\Auth\Config\Auth as AuthConfig;
+use Myth\Auth\Entities\User;
+use Myth\Auth\Exceptions\AuthException;
+use Myth\Auth\Exceptions\UserNotFoundException;
+use Myth\Auth\Models\LoginModel;
+
+class AuthenticationBase
+{
+    /**
+     * @var User|null
+     */
+    protected $user;
+
+    /**
+     * @var Model
+     */
+    protected $userModel;
+
+    /**
+     * @var LoginModel
+     */
+    protected $loginModel;
+
+    /**
+     * @var string
+     */
+    protected $error;
+
+    /**
+     * @var AuthConfig
+     */
+    protected $config;
+
+    public function __construct($config)
+    {
+        $this->config = $config;
+    }
+
+    /**
+     * Returns the current error, if any.
+     *
+     * @return string
+     */
+    public function error()
+    {
+        return $this->error;
+    }
+
+    /**
+     * Whether to continue instead of throwing exceptions,
+     * as defined in config.
+     *
+     * @return bool
+     */
+    public function silent()
+    {
+        return (bool)$this->config->silent;
+    }
+
+
+    /**
+     * Logs a user into the system.
+     * NOTE: does not perform validation. All validation should
+     * be done prior to using the login method.
+     *
+     * @param User $user
+     * @param bool $remember
+     *
+     * @return bool
+     * @throws \Exception
+     */
+    public function login(User $user = null, bool $remember = false): bool
+    {
+        if (empty($user)) {
+            $this->user = null;
+            return false;
+        }
+
+        $this->user = $user;
+
+        // Always record a login attempt
+        $ipAddress = service('request')->getIPAddress();
+        $this->recordLoginAttempt($user, $ipAddress, $user->id ?? null, true);
+
+        // Regenerate the session ID to help protect against session fixation
+        if (ENVIRONMENT !== 'testing') {
+            session()->regenerate();
+        }
+
+        // Let the session know we're logged in
+        session()->set('logged_in', $this->user->id);
+
+        // When logged in, ensure cache control headers are in place
+        service('response')->noCache();
+
+        if ($remember && $this->config->allowRemembering) {
+            $this->rememberUser($this->user->id);
+        }
+
+        // We'll give a 20% chance to need to do a purge since we
+        // don't need to purge THAT often, it's just a maintenance issue.
+        // to keep the table from getting out of control.
+        if (mt_rand(1, 100) < 20) {
+            $this->loginModel->purgeOldRememberTokens();
+        }
+
+        // trigger login event, in case anyone cares
+        Events::trigger('login', $user);
+
+        return true;
+    }
+
+    /**
+     * Checks to see if the user is logged in.
+     *
+     * @return bool
+     */
+    public function isLoggedIn(): bool
+    {
+        // On the off chance
+        if ($this->user instanceof User) {
+            return true;
+        }
+
+        if ($userID = session('logged_in')) {
+            // Store our current user object
+            $this->user = $this->userModel->find($userID);
+
+            return $this->user instanceof User;
+        }
+
+        return false;
+    }
+
+
+    /**
+     * Logs a user into the system by their ID.
+     *
+     * @param int $id
+     * @param bool $remember
+     */
+    public function loginByID(int $id, bool $remember = false)
+    {
+        $user = $this->retrieveUser(['id' => $id]);
+
+        if (empty($user)) {
+            throw UserNotFoundException::forUserID($id);
+        }
+
+        return $this->login($user, $remember);
+    }
+
+    /**
+     * Logs a user out of the system.
+     */
+    public function logout()
+    {
+        helper('cookie');
+
+        // Destroy the session data - but ensure a session is still
+        // available for flash messages, etc.
+        if (isset($_SESSION)) {
+            foreach ($_SESSION as $key => $value) {
+                $_SESSION[$key] = NULL;
+                unset($_SESSION[$key]);
+            }
+        }
+
+        // Regenerate the session ID for a touch of added safety.
+        session()->regenerate(true);
+
+        // Remove the cookie
+        delete_cookie("remember");
+
+        // Handle user-specific tasks
+        if ($user = $this->user()) {
+            // Take care of any remember me functionality
+            $this->loginModel->purgeRememberTokens($user->id);
+
+            // Trigger logout event
+            Events::trigger('logout', $user);
+
+            $this->user = null;
+        }
+    }
+
+    /**
+     * Record a login attempt
+     *
+     * @param string $email
+     * @param string|null $ipAddress
+     * @param int|null $userID
+     *
+     * @param bool $success
+     *
+     * @return bool|int|string
+     */
+    public function recordLoginAttempt($user, string $ipAddress = null, int $userID = null, bool $success)
+    {
+// look here
+// look here
+// look here
+  // look here
+  // look here
+   // look here
+    // look here
+
+
+        if (is_object($user)) {
+            return $this->loginModel->insert([
+                'ip_address' => $ipAddress,
+                'username' => $user->username,
+                'user_id' => $userID,
+                'date' => date('Y-m-d H:i:s'),
+                'success' => (int)$success
+            ]);
+
+        } else {
+
+            if (isset($user['phone'])) {
+                return $this->loginModel->insert([
+                    'ip_address' => $ipAddress,
+                    'phone' => $user['phone'],
+                    'user_id' => $userID,
+                    'date' => date('Y-m-d H:i:s'),
+                    'success' => (int)$success
+                ]);
+            } else if (isset($user['email'])) {
+                return $this->loginModel->insert([
+                    'ip_address' => $ipAddress,
+                    'email' => $user['email'],
+                    'user_id' => $userID,
+                    'date' => date('Y-m-d H:i:s'),
+                    'success' => (int)$success
+                ]);
+            } else {
+                return $this->loginModel->insert([
+                    'ip_address' => $ipAddress,
+                    'username' => $user['username'],
+                    'user_id' => $userID,
+                    'date' => date('Y-m-d H:i:s'),
+                    'success' => (int)$success
+                ]);
+
+            }
+
+        }
+
+    }
+
+    /**
+     * Generates a timing-attack safe remember me token
+     * and stores the necessary info in the db and a cookie.
+     *
+     * @see https://paragonie.com/blog/2015/04/secure-authentication-php-with-long-term-persistence
+     *
+     * @param int $userID
+     *
+     * @throws \Exception
+     */
+    public function rememberUser(int $userID)
+    {
+        $selector = bin2hex(random_bytes(12));
+        $validator = bin2hex(random_bytes(20));
+        $expires = date('Y-m-d H:i:s', time() + $this->config->rememberLength);
+
+        $token = $selector . ':' . $validator;
+
+        // Store it in the database
+        $this->loginModel->rememberUser($userID, $selector, hash('sha256', $validator), $expires);
+
+        // Save it to the user's browser in a cookie.
+        $appConfig = config('App');
+        $response = service('response');
+
+        // Create the cookie
+        $response->setCookie(
+            'remember',                                // Cookie Name
+            $token,                                    // Value
+            $this->config->rememberLength,            // # Seconds until it expires
+            $appConfig->cookieDomain,
+            $appConfig->cookiePath,
+            $appConfig->cookiePrefix,
+            $appConfig->cookieSecure,                   // Only send over HTTPS?
+            true                                        // Hide from Javascript?
+        );
+    }
+
+    /**
+     * Sets a new validator for this user/selector. This allows
+     * a one-time use of remember-me tokens, but still allows
+     * a user to be remembered on multiple browsers/devices.
+     *
+     * @param int $userID
+     * @param string $selector
+     */
+    public function refreshRemember(int $userID, string $selector)
+    {
+        $existing = $this->loginModel->getRememberToken($selector);
+
+        // No matching record? Shouldn't happen, but remember the user now.
+        if (empty($existing)) {
+            return $this->rememberUser($userID);
+        }
+
+        // Update the validator in the database and the session
+        $validator = bin2hex(random_bytes(20));
+
+        $this->loginModel->updateRememberValidator($selector, $validator);
+
+        // Save it to the user's browser in a cookie.
+        helper('cookie');
+
+        $appConfig = config('App');
+
+        // Create the cookie
+        set_cookie(
+            'remember',                            // Cookie Name
+            $selector . ':' . $validator,                // Value
+            (string)$this->config->rememberLength, // # Seconds until it expires
+            $appConfig->cookieDomain,
+            $appConfig->cookiePath,
+            $appConfig->cookiePrefix,
+            $appConfig->cookieSecure,               // Only send over HTTPS?
+            true                                    // Hide from Javascript?
+        );
+    }
+
+
+    /**
+     * Returns the User ID for the current logged in user.
+     *
+     * @return int|null
+     */
+    public function id()
+    {
+        return $this->user->id ?? null;
+    }
+
+
+    /**
+     * Returns the User instance for the current logged in user.
+     *
+     * @return User|null
+     */
+    public function user()
+    {
+        return $this->user;
+    }
+
+    /**
+     * Grabs the current user from the database.
+     *
+     * @param array $wheres
+     *
+     * @return array|null|object
+     */
+    public function retrieveUser(array $wheres)
+    {
+        if (!$this->userModel instanceof Model) {
+            throw AuthException::forInvalidModel('User');
+        }
+
+        $user = $this->userModel
+            ->where($wheres)
+            ->first();
+
+        return $user;
+    }
+
+
+    //--------------------------------------------------------------------
+    // Model Setters
+    //--------------------------------------------------------------------
+
+    /**
+     * Sets the model that should be used to work with
+     * user accounts.
+     *
+     * @param Model $model
+     *
+     * @return $this
+     */
+    public function setUserModel(Model $model)
+    {
+        $this->userModel = $model;
+
+        return $this;
+    }
+
+    /**
+     * Sets the model that should be used to record
+     * login attempts (but failed and successful).
+     *
+     * @param LoginModel $model
+     *
+     * @return $this
+     */
+    public function setLoginModel(Model $model)
+    {
+        $this->loginModel = $model;
+
+        return $this;
+    }
+
+}
+
+
+
+
+//------------------------------------------------------------------------------
+7) path math/auth/src/Authentication/ LocalAuthenticator.php;
+
+change file like mine
+<?php namespace Myth\Auth\Authentication;
+
+use CodeIgniter\Router\Exceptions\RedirectException;
+use Myth\Auth\Entities\User;
+use Myth\Auth\Exceptions\AuthException;
+use Myth\Auth\Password;
+
+class LocalAuthenticator extends AuthenticationBase implements AuthenticatorInterface
+{
+    /**
+     * Attempts to validate the credentials and log a user in.
+     *
+     * @param array $credentials
+     * @param bool $remember Should we remember the user (if enabled)
+     *
+     * @return bool
+     */
+     // look here
+       // look here
+         // look here
+           // look here
+             // look here
+
+    public function attempt(array $credentials, bool $remember = null): bool
+    {
+        $this->user = $this->validate($credentials, true);
+
+        if (empty($this->user)) {
+            // Always record a login attempt, whether success or not.
+
+            $ipAddress = service('request')->getIPAddress();
+
+
+
+            $this->recordLoginAttempt($credentials, $ipAddress, $this->user->id ?? null, false);
+
+            $this->user = null;
+            return false;
+        }
+
+        if ($this->user->isBanned()) {
+            // Always record a login attempt, whether success or not.
+            $ipAddress = service('request')->getIPAddress();
+            $this->recordLoginAttempt($credentials, $ipAddress, $this->user->id ?? null, false);
+
+            $this->error = lang('Auth.userIsBanned');
+
+            $this->user = null;
+            return false;
+        }
+
+        if (!$this->user->isActivated()) {
+            // Always record a login attempt, whether success or not.
+            $ipAddress = service('request')->getIPAddress();
+            $this->recordLoginAttempt($credentials, $ipAddress, $this->user->id ?? null, false);
+
+            $param = http_build_query([
+                'login' => urlencode($credentials['username'])
+            ]);
+
+            $this->error = lang('Auth.notActivated') . ' ' . anchor(route_to('resend-activate-account') . '?' . $param, lang('Auth.activationResend'));
+
+            $this->user = null;
+            return false;
+        }
+
+        return $this->login($this->user, $remember);
+    }
+
+    /**
+     * Checks to see if the user is logged in or not.
+     *
+     * @return bool
+     */
+    public function check(): bool
+    {
+        if ($this->isLoggedIn()) {
+            // Do we need to force the user to reset their password?
+            if ($this->user && $this->user->force_pass_reset) {
+                throw new RedirectException(route_to('reset-password') . '?token=' . $this->user->reset_hash);
+            }
+
+            return true;
+        }
+
+        // Check the remember me functionality.
+        helper('cookie');
+        $remember = get_cookie('remember');
+
+        if (empty($remember)) {
+            return false;
+        }
+
+        [$selector, $validator] = explode(':', $remember);
+        $validator = hash('sha256', $validator);
+
+        $token = $this->loginModel->getRememberToken($selector);
+
+        if (empty($token)) {
+            return false;
+        }
+
+        if (!hash_equals($token->hashedValidator, $validator)) {
+            return false;
+        }
+
+        // Yay! We were remembered!
+        $user = $this->userModel->find($token->user_id);
+
+        if (empty($user)) {
+            return false;
+        }
+
+        $this->login($user);
+
+        // We only want our remember me tokens to be valid
+        // for a single use.
+        $this->refreshRemember($user->id, $selector);
+
+        return true;
+    }
+
+    /**
+     * Checks the user's credentials to see if they could authenticate.
+     * Unlike `attempt()`, will not log the user into the system.
+     *
+     * @param array $credentials
+     * @param bool $returnUser
+     *
+     * @return bool|User
+     */
+
+
+    public function validate(array $credentials, bool $returnUser = false)
+    {
+        // Can't validate without a password.
+        if (empty($credentials['password']) || count($credentials) < 2) {
+            return false;
+        }
+
+        // Only allowed 1 additional credential other than password
+        $password = $credentials['password'];
+        unset($credentials['password']);
+
+        if (count($credentials) > 1) {
+            throw AuthException::forTooManyCredentials();
+        }
+
+        // Ensure that the fields are allowed validation fields
+        if (!in_array(key($credentials), $this->config->validFields)) {
+            throw AuthException::forInvalidFields(key($credentials));
+        }
+
+        // Can we find a user with those credentials?
+        $user = $this->userModel->where($credentials)
+            ->first();
+
+        if (!$user) {
+            $this->error = lang('Auth.badAttempt');
+            return false;
+        }
+
+        // Now, try matching the passwords.
+        if (!Password::verify($password, $user->password_hash)) {
+            $this->error = lang('Auth.invalidPassword');
+            return false;
+        }
+
+        // Check to see if the password needs to be rehashed.
+        // This would be due to the hash algorithm or hash
+        // cost changing since the last time that a user
+        // logged in.
+        if (Password::needsRehash($user->password_hash, $this->config->hashAlgorithm)) {
+            $user->password = $password;
+            $this->userModel->save($user);
+        }
+
+        return $returnUser
+            ? $user
+            : true;
+    }
+
+}
+
+------------------------------------------------------------------------------
+7 path math/auth/src/Authorization/ PermissionModel.php;
+
+change file like mine
+
+<?php namespace Myth\Auth\Authorization;
+
+use CodeIgniter\Database\BaseResult;
+use CodeIgniter\Database\Query;
+use CodeIgniter\Model;
+use Modules\Shared\Models\Aggregation;
+class PermissionModel extends Aggregation
+{
+    protected $table = 'auth_permissions';
+// look here
+// look here
+// look here
+// look here
+ protected $returnType = PermissionEntity::class;
+// look here
+// look here
+// look here
+// look here
+    protected $allowedFields = [
+        'name', 'description','active'
+    ];
+
+    protected $useTimestamps = false;
+// look here
+// look here
+// look here
+// look here
+    protected $validationRules = [
+        'name' => 'required|max_length[255]|is_unique[auth_permissions.name,name,{name}]',
+        'description' => 'max_length[255]',
+        'active' => 'required',
+    ];
+
+    /**
+     * Checks to see if a user, or one of their groups,
+     * has a specific permission.
+     *
+     * @param int $userId
+     * @param int $permissionId
+     *
+     * @return bool
+     */
+    public function doesUserHavePermission(int $userId, int $permissionId): bool
+    {
+        // Check user permissions and take advantage of caching
+        $userPerms = $this->getPermissionsForUser($userId);
+
+        if (count($userPerms) && array_key_exists($permissionId, $userPerms))
+        {
+            return true;
+        }
+
+        // Check group permissions
+        $count = $this->db->table('auth_groups_permissions')
+            ->join('auth_groups_users', 'auth_groups_users.group_id = auth_groups_permissions.group_id', 'inner')
+            ->where('auth_groups_permissions.permission_id', $permissionId)
+            ->where('auth_groups_users.user_id', $userId)
+            ->countAllResults();
+
+        return $count > 0;
+    }
+
+    /**
+     * Adds a single permission to a single user.
+     *
+     * @param int $permissionId
+     * @param int $userId
+     *
+     * @return BaseResult|Query|false
+     */
+    public function addPermissionToUser(int $permissionId, int $userId)
+    {
+        cache()->delete("{$userId}_permissions");
+
+        return $this->db->table('auth_users_permissions')->insert([
+            'user_id' => $userId,
+            'permission_id' => $permissionId
+        ]);
+    }
+
+    /**
+     * Removes a permission from a user.
+     *
+     * @param int $permissionId
+     * @param int $userId
+     *
+     * @return mixed
+     */
+    public function removePermissionFromUser(int $permissionId, int $userId)
+    {
+        $this->db->table('auth_users_permissions')->where([
+            'user_id' => $userId,
+            'permission_id' => $permissionId
+        ])->delete();
+
+        cache()->delete("{$userId}_permissions");
+    }
+
+    /**
+     * Gets all permissions for a user in a way that can be
+     * easily used to check against:
+     *
+     * [
+     *  id => name,
+     *  id => name
+     * ]
+     *
+     * @param int $userId
+     *
+     * @return array
+     */
+    public function getPermissionsForUser(int $userId): array
+    {
+        if (null === $found = cache("{$userId}_permissions"))
+        {
+            $fromUser = $this->db->table('auth_users_permissions')
+                ->select('id, auth_permissions.name')
+                ->join('auth_permissions', 'auth_permissions.id = permission_id', 'inner')
+                ->where('user_id', $userId)
+                ->get()
+                ->getResultObject();
+            $fromGroup = $this->db->table('auth_groups_users')
+                ->select('auth_permissions.id, auth_permissions.name')
+                ->join('auth_groups_permissions', 'auth_groups_permissions.group_id = auth_groups_users.group_id', 'inner')
+                ->join('auth_permissions', 'auth_permissions.id = auth_groups_permissions.permission_id', 'inner')
+                ->where('user_id', $userId)
+                ->get()
+                ->getResultObject();
+
+            $combined = array_merge($fromUser, $fromGroup);
+
+            $found = [];
+            foreach ($combined as $row)
+            {
+                $found[$row->id] = strtolower($row->name);
+            }
+
+            cache()->save("{$userId}_permissions", $found, 300);
+        }
+
+        return $found;
+    }
+    public function getPermissionsForGroup(int $groupId): array
+    {
+        $fromGroup = $this->select('auth_permissions.*')
+            ->join('auth_groups_permissions', 'auth_groups_permissions.permission_id = auth_permissions.id', 'inner')
+            ->where('group_id', $groupId)
+            ->findAll();
+
+        $found = [];
+        $counter = 0;
+        foreach ($fromGroup as $permission) {
+            $found[$counter] = $permission;
+            $counter++;
+        }
+
+        return $found;
+    }
+}
+|-------------------------------------------------------------------------------------
+8 path math/auth/src/Authorization/ GroupModel.php;
+
+change file like mine
+
+
+<?php namespace Myth\Auth\Authorization;
+
+use CodeIgniter\Model;
+use Modules\Auth\Entities\GroupEntity;
+use Modules\Shared\Models\Aggregation;
+
+// look here
+// look here
+// look here
+// look here
+class GroupModel extends Aggregation
+{
+    protected $table = 'auth_groups';
+    protected $primaryKey = 'id';
+    // look here
+    // look here
+    // look here
+    // look here
+    protected $returnType = GroupEntity::class;
+
+    protected $allowedFields = [
+        'name', 'description'
+    ];
+
+    protected $useTimestamps = false;
+
+    protected $validationRules = [
+        'name' => 'required|max_length[255]|is_unique[auth_groups.name,name,{name}]',
+        'description' => 'max_length[255]',
+    ];
+    protected $validationMessages = [];
+    protected $skipValidation = false;
+
+    //--------------------------------------------------------------------
+    // Users
+    //--------------------------------------------------------------------
+
+    /**
+     * Adds a single user to a single group.
+     *
+     * @param int $userId
+     * @param int $groupId
+     *
+     * @return bool
+     */
+    public function addUserToGroup(int $userId, int $groupId)
+    {
+        cache()->delete("{$groupId}_users");
+        cache()->delete("{$userId}_groups");
+        cache()->delete("{$userId}_permissions");
+
+        $data = [
+            'user_id'  => (int) $userId,
+            'group_id' => (int) $groupId
+        ];
+
+        return (bool) $this->db->table('auth_groups_users')->insert($data);
+    }
+
+    /**
+     * Removes a single user from a single group.
+     *
+     * @param int $userId
+     * @param int|string $groupId
+     *
+     * @return bool
+     */
+    public function removeUserFromGroup(int $userId, $groupId)
+    {
+        cache()->delete("{$groupId}_users");
+        cache()->delete("{$userId}_groups");
+        cache()->delete("{$userId}_permissions");
+
+        return $this->db->table('auth_groups_users')
+            ->where([
+                'user_id'  => $userId,
+                'group_id' => (int) $groupId
+            ])->delete();
+    }
+
+    /**
+     * Removes a single user from all groups.
+     *
+     * @param int $userId
+     *
+     * @return bool
+     */
+    public function removeUserFromAllGroups(int $userId)
+    {
+        cache()->delete("{$userId}_groups");
+        cache()->delete("{$userId}_permissions");
+
+        return $this->db->table('auth_groups_users')
+            ->where('user_id', (int)$userId)
+            ->delete();
+    }
+
+    /**
+     * Returns an array of all groups that a user is a member of.
+     *
+     * @param int $userId
+     *
+     * @return array
+     */
+    public function getGroupsForUser(int $userId)
+    {
+        if (null === $found = cache("{$userId}_groups"))
+        {
+            $found = $this->builder()
+                ->select('auth_groups_users.*, auth_groups.name, auth_groups.description')
+                ->join('auth_groups_users', 'auth_groups_users.group_id = auth_groups.id', 'left')
+                ->where('user_id', $userId)
+                ->get()->getResultArray();
+
+            cache()->save("{$userId}_groups", $found, 300);
+        }
+
+        return $found;
+    }
+
+    /**
+     * Returns an array of all users that are members of a group.
+     *
+     * @param int $groupId
+     *
+     * @return array
+     */
+    public function getUsersForGroup(int $groupId)
+    {
+        if (null === $found = cache("{$groupId}_users"))
+        {
+            $found = $this->builder()
+                ->select('auth_groups_users.*, users.*')
+                ->join('auth_groups_users', 'auth_groups_users.group_id = auth_groups.id', 'left')
+                ->join('users', 'auth_groups_users.user_id = users.id', 'left')
+                ->where('auth_groups.id', $groupId)
+                ->get()->getResultArray();
+
+            cache()->save("{$groupId}_users", $found, 300);
+        }
+
+        return $found;
+    }
+
+    //--------------------------------------------------------------------
+    // Permissions
+    //--------------------------------------------------------------------
+
+    /**
+     * Gets all permissions for a group in a way that can be
+     * easily used to check against:
+     *
+     * [
+     *  id => name,
+     *  id => name
+     * ]
+     *
+     * @param int $groupId
+     *
+     * @return array
+     */
+    public function getPermissionsForGroup(int $groupId): array
+    {
+        $permissionModel = model(PermissionModel::class);
+        $fromGroup = $permissionModel
+            ->select('auth_permissions.*')
+            ->join('auth_groups_permissions', 'auth_groups_permissions.permission_id = auth_permissions.id', 'inner')
+            ->where('group_id', $groupId)
+            ->findAll();
+
+        $found = [];
+        foreach ($fromGroup as $permission)
+        {
+            $found[$permission['id']] = $permission;
+        }
+
+        return $found;
+    }
+
+    /**
+     * Add a single permission to a single group, by IDs.
+     *
+     * @param int $permissionId
+     * @param int $groupId
+     *
+     * @return mixed
+     */
+    public function addPermissionToGroup(int $permissionId, int $groupId)
+    {
+        $data = [
+            'permission_id' => (int)$permissionId,
+            'group_id'      => (int)$groupId
+        ];
+
+        return $this->db->table('auth_groups_permissions')->insert($data);
+    }
+
+    //--------------------------------------------------------------------
+
+
+    /**
+     * Removes a single permission from a single group.
+     *
+     * @param int $permissionId
+     * @param int $groupId
+     *
+     * @return mixed
+     */
+    public function removePermissionFromGroup(int $permissionId, int $groupId)
+    {
+        return $this->db->table('auth_groups_permissions')
+            ->where([
+                'permission_id' => $permissionId,
+                'group_id'      => $groupId
+            ])->delete();
+    }
+
+    //--------------------------------------------------------------------
+
+    /**
+     * Removes a single permission from all groups.
+     *
+     * @param int $permissionId
+     *
+     * @return mixed
+     */
+    public function removePermissionFromAllGroups(int $permissionId)
+    {
+        return $this->db->table('auth_groups_permissions')
+            ->where('permission_id', $permissionId)
+            ->delete();
+    }
+}
+
