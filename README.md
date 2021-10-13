@@ -5,7 +5,7 @@ application without changing any structure.
 
 > Attention: To speed up project development , I suggest , to see front-end application with Angular ,It's  fully compatible with this project
 > </br> here is link : </br>
-> https://github.com/yasinpalizban/
+> https://github.com/yasinpalizban/angular-for-codeigniter-restful-kick-starter
 
 ### Instructions
 
@@ -50,9 +50,6 @@ You can sign in via Email Or Phone Or Username </br>
 - Default user username admin
 - Default user password pass
 
-#### Requirement
-
-- php 7.4, 8.0+
 
 #### Packages
 
