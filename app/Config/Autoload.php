@@ -48,6 +48,7 @@ class Autoload extends AutoloadConfig
         'Modules\Common' => ROOTPATH . 'module/common',
         'Modules\Auth' => ROOTPATH . 'module/auth',
         'Modules\Home' => ROOTPATH . 'module/home',
+            'Modules\App' => ROOTPATH . 'module/app',
       
     ];
 
